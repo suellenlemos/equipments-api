@@ -1,38 +1,42 @@
-from flask_restx import Resource
-from flask_smorest import Blueprint
 from http import HTTPStatus
 
-from src.routers.helpers import get_response
+from contextlib import closing
+from flask import request
+from flask_restx import Resource
+from flask_smorest import Blueprint
+
+from src.helpers import LogHelper
+from src.logs import logger
+from src.models import Equipment, EquipmentSchema
+from src.routers.helpers import configure_session, get_response
 
 equipment_blueprint = Blueprint("Equipment", __name__)
-
-
-equipments = [
-    {
-        "equipmentId": "EQ-12495",
-        "timestamp": "2023-02-15T01:30:00.000-05:00",
-        "value": 78.42
-    },
-    {
-        "equipmentId": "EQ-12492",
-        "timestamp": "2023-01-12T01:30:00.000-05:00",
-        "value": 8.8
-    }
-]
 
 
 @equipment_blueprint.route("/equipment")
 class RouteEquipment(Resource):
     def get(self):
-        try:
-            result = equipments
+        with closing(configure_session()) as session:
+            try:
+                result = session.query(Equipment)\
+                    .order_by(Equipment.timestamp) \
+                    .all()
 
-            if not result:
-                return get_response(HTTPStatus.NO_CONTENT)
+                total_count = len(result)
 
-            return get_response(HTTPStatus.OK, {'total': len(result),
-                                                'equipments': equipments,
-                                                'message': 'Request happened successfully'})
-        except Exception as ex:
-            msg = f'Unable to get equipment list. Error: {str(ex)}'
-            return get_response(HTTPStatus.INTERNAL_SERVER_ERROR, msg)
+                if not result:
+                    return get_response(HTTPStatus.OK, {'total': total_count,
+                                                        'equipments': result,
+                                                        'message': 'No equipment was found'})
+
+                logger.info('get all equipments')
+
+                return get_response(HTTPStatus.OK, {'total': total_count,
+                                                    'equipments': EquipmentSchema(many=True).dump(result),
+                                                    'message': 'Request happened successfully'})
+            except Exception as ex:
+                session.rollback()
+                msg = f'Unable to get equipment list. Error: {str(ex)}'
+                log_msg = LogHelper.get_log_msg(msg, request)
+                logger.exception(log_msg)
+                return get_response(HTTPStatus.INTERNAL_SERVER_ERROR, msg)
