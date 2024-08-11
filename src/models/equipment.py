@@ -3,6 +3,7 @@ from datetime import datetime
 from pytz import timezone, utc
 
 from src.config import db, ma
+from src.helpers import CurrentTime
 from src.logs import logger
 
 
@@ -16,11 +17,10 @@ class Equipment(db.Model):
     def __init__(
             self,
             equipmentId: str,
-            timestamp: datetime,
             value: float,
     ):
         self.equipmentId = equipmentId
-        self.timestamp = timestamp
+        self.timestamp = CurrentTime.current_time()
         self.value = value
 
 

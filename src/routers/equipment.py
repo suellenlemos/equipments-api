@@ -1,10 +1,10 @@
-from http import HTTPStatus
-
 from contextlib import closing
 from flask import request
 from flask_restx import Resource
 from flask_smorest import Blueprint
+from http import HTTPStatus
 
+from src.config import db
 from src.helpers import LogHelper
 from src.logs import logger
 from src.models import Equipment, EquipmentSchema
@@ -19,7 +19,7 @@ class RouteEquipment(Resource):
         with closing(configure_session()) as session:
             try:
                 result = session.query(Equipment)\
-                    .order_by(Equipment.timestamp) \
+                    .order_by(Equipment.equipmentId) \
                     .all()
 
                 total_count = len(result)
@@ -40,3 +40,28 @@ class RouteEquipment(Resource):
                 log_msg = LogHelper.get_log_msg(msg, request)
                 logger.exception(log_msg)
                 return get_response(HTTPStatus.INTERNAL_SERVER_ERROR, msg)
+
+    def post(self):
+        body = request.get_json() if request.get_json() else dict()
+
+        equipmentId: str = body.get('equipmentId')
+        value: float = body.get('value')
+
+        if not (equipmentId):
+            return get_response(HTTPStatus.BAD_REQUEST, "equipmentId field must be sent")
+
+        new_equipment = Equipment(
+            equipmentId=equipmentId,
+            value=value
+        )
+
+        equipment_already_exists = db.session.query(
+            Equipment).filter(Equipment.equipmentId == new_equipment.equipmentId).first()
+
+        if equipment_already_exists:
+            return get_response(HTTPStatus.BAD_REQUEST, f"This equipment {equipment_already_exists.equipmentId.capitalize()} already exists")
+
+        db.session.add(new_equipment)
+        db.session.commit()
+        logger.info(f'Category created: {new_equipment}')
+        return get_response(HTTPStatus.CREATED, EquipmentSchema().dump(new_equipment))
