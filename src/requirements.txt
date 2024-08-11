@@ -6,3 +6,14 @@ flask-marshmallow
 flask-restx
 marshmallow
 uWSGI
+sqlalchemy
+flask-sqlalchemy
+SQLAlchemy
+Flask-SQLAlchemy
+Flask-SQLAlchemy-Caching
+marshmallow-sqlalchemy
+loguru
+psycopg2-binary
+Flask-Migrate
+alembic
+autopep8
