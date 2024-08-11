@@ -1,0 +1,8 @@
+flask
+flask-smorest
+python-dotenv
+Flask-Cors
+flask-marshmallow
+flask-restx
+marshmallow
+uWSGI
