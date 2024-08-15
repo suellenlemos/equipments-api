@@ -17,10 +17,11 @@ class Equipment(db.Model):
     def __init__(
             self,
             equipmentId: str,
-            value: float,
+            timestamp: datetime | None = None,
+            value: float | None = None,
     ):
         self.equipmentId = equipmentId
-        self.timestamp = CurrentTime.current_time()
+        self.timestamp = timestamp
         self.value = value
 
 
