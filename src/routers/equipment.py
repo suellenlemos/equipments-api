@@ -5,10 +5,9 @@ from flask_restx import Resource
 from flask_smorest import Blueprint
 from flask_sqlalchemy.query import Query as BaseQuery
 from http import HTTPStatus
-from os import path
 from pandas import DataFrame, isna, read_csv
 from sqlalchemy.orm import Session
-from sqlalchemy.sql import select
+from sqlalchemy.sql import and_, or_, select
 from tempfile import TemporaryDirectory
 from werkzeug.utils import secure_filename
 
@@ -19,6 +18,12 @@ from src.models import Equipment, EquipmentSchema
 from src.routers.helpers import configure_session, get_response
 
 equipment_blueprint = Blueprint("Equipment", __name__)
+
+
+def normalize_timestamp(ts):
+    if isinstance(ts, str):
+        return datetime.fromisoformat(ts).replace(tzinfo=None)
+    return ts.replace(tzinfo=None)
 
 
 @equipment_blueprint.route("/equipment")
@@ -50,7 +55,7 @@ class RouteEquipment(Resource):
     def post(self):
         body = request.get_json() if request.get_json() else dict()
 
-        equipmentId: str = body.get('equipmentId')
+        equipmentId: str = body['equipmentId']
         value: float = body.get('value')
 
         if not (equipmentId):
@@ -61,12 +66,6 @@ class RouteEquipment(Resource):
             timestamp=CurrentTime.current_time(),
             value=value
         )
-
-        equipment_already_exists = db.session.query(
-            Equipment).filter(Equipment.equipmentId == new_equipment.equipmentId).first()
-
-        if equipment_already_exists:
-            return get_response(HTTPStatus.BAD_REQUEST, f"This equipment {equipment_already_exists.equipmentId.capitalize()} already exists")
 
         db.session.add(new_equipment)
         db.session.commit()
@@ -113,17 +112,17 @@ def read_file(session: Session):
 
     filename = secure_filename(file_uploaded.filename)
 
-    with TemporaryDirectory() as dir_path:
+    with TemporaryDirectory():
         temporary_path: str = f"src/temporary/{filename}"
-        file_path = path.join(dir_path, filename)
         file_uploaded.save(temporary_path)
 
         try:
             workbook = read_csv(temporary_path, delimiter=';')
-            create_equipment(session, workbook)
+            add_equipment_info(session, workbook)
 
-            logger.info(
-                logger.info(f"Extracted data from CSV file: '{filename}' successfully"))
+            logger.info(f"Extracted data from CSV file: '{
+                        filename}' successfully"
+                        )
 
         except TypeError as e:
             logger.error(f"Type error while processing file '{filename}': {e}")
@@ -135,17 +134,16 @@ def read_file(session: Session):
             raise Exception(msg)
 
 
-def create_equipment(session: Session, workbook: DataFrame) -> None:
+def add_equipment_info(session: Session, workbook: DataFrame) -> None:
     header_list = {
         'equipmentId',
         'timestamp',
         'value',
     }
 
-    relevant_columns_list, rows_by_equipment_id = load_columns(
+    relevant_columns_list, rows_by_equipment_id_and_timestamp = load_columns(
         workbook=workbook,
-        header_list=header_list,
-        equipment_id='equipmentId'
+        header_list=header_list
     )
 
     modified_rows = []
@@ -153,20 +151,27 @@ def create_equipment(session: Session, workbook: DataFrame) -> None:
     new_row = False
 
     for columns in relevant_columns_list:
-        equipment_id = standardize_equipment_id(columns.get('equipmentId'))
+        equipment_id = standardize_equipment_id(columns['equipmentId'])
+        timestamp = normalize_timestamp(
+            standardize_timestamp(columns['timestamp']))
 
-        row: Equipment = rows_by_equipment_id.get(equipment_id)
+        value: float = columns.get('value')
+        if isna(value):
+            value = None
+
+        row_key = (equipment_id, timestamp)
+
+        row: Equipment = rows_by_equipment_id_and_timestamp.get(row_key)
 
         if not row:
             session.add(Equipment(
                 equipmentId=equipment_id,
-                timestamp=columns.get('timestamp'),
-                value=columns.get('value'),
+                timestamp=timestamp,
+                value=value
             ))
             new_row = True
         else:
-            row.timestamp = columns.get('timestamp'),
-            row.value = columns.get('value'),
+            row.value = value
             modified_rows.append(row)
 
         if modified_rows or new_row:
@@ -174,7 +179,7 @@ def create_equipment(session: Session, workbook: DataFrame) -> None:
             session.commit()
 
 
-def load_columns(workbook: DataFrame, header_list: list, equipment_id: str = 'equipmentId') -> list:
+def load_columns(workbook: DataFrame, header_list: set) -> list:
     logger.debug(
         f"Start time {datetime.today().strftime('%d/%m/%Y, %H:%M:%S')}")
 
@@ -189,26 +194,31 @@ def load_columns(workbook: DataFrame, header_list: list, equipment_id: str = 'eq
 
     relevant_columns_list = relevant_columns_df.to_dict(orient='records')
 
-    equipment_ids = []
-    for columns in relevant_columns_list:
-        if columns.get(equipment_id) is not None:
-            standardized_equipment_id = standardize_equipment_id(
-                columns.get(equipment_id))
-            equipment_ids.append(standardized_equipment_id)
-        elif all(value is None for value in columns.values()):
-            break
+    equipment_ids_and_timestamps = [
+        (standardize_equipment_id(row['equipmentId']),
+         standardize_timestamp(row['timestamp']))
+        for row in relevant_columns_list
+        if row.get('equipmentId') is not None and row.get('timestamp') is not None
+    ]
 
     with closing(configure_session()) as session:
+        conditions = [
+            and_(Equipment.equipmentId == equipment_id,
+                 Equipment.timestamp == timestamp)
+            for equipment_id, timestamp in equipment_ids_and_timestamps
+        ]
+
         rows = session.execute(
-            select(Equipment)
-            .where(Equipment.equipmentId.in_(equipment_ids))
+            select(Equipment).where(or_(*conditions))
         ).scalars().all()
 
-    rows_by_equipment_id = {row.equipmentId: row for row in rows}
+    rows_by_equipment_id_and_timestamp = {
+        (row.equipmentId, row.timestamp): row for row in rows
+    }
 
     logger.debug(f"End time {datetime.today().strftime('%d/%m/%Y, %H:%M:%S')}")
 
-    return relevant_columns_list, rows_by_equipment_id
+    return relevant_columns_list, rows_by_equipment_id_and_timestamp
 
 
 def standardize_equipment_id(equipment_id: str) -> str:
@@ -220,6 +230,20 @@ def standardize_equipment_id(equipment_id: str) -> str:
     equipment_id = equipment_id.strip()
     if not equipment_id:
         raise ValueError(
-            "A coluna equipmentId não está preenchida corretamente (o valor está em branco, por exemplo).")
+            "A coluna equipmentId não está preenchida corretamente (existe algum valor que está em branco, por exemplo).")
 
     return equipment_id
+
+
+def standardize_timestamp(timestamp: datetime) -> datetime:
+    if isna(timestamp):
+        timestamp = ''
+    else:
+        timestamp = timestamp
+
+    timestamp = timestamp.strip()
+    if not timestamp:
+        raise ValueError(
+            "A coluna timestamp não está preenchida corretamente (existe algum valor que está em branco, por exemplo).")
+
+    return timestamp

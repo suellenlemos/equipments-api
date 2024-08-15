@@ -18,7 +18,7 @@ load_dotenv()
 cors = CORS()
 
 
-def create_app() -> Flask:
+def create_app(config_name: str = 'default') -> Flask:
     app: Flask = Flask(__name__)
 
     app.config["API_TITLE"] = "Equipments REST API"
@@ -33,6 +33,13 @@ def create_app() -> Flask:
         'SQLALCHEMY_TRACK_MODIFICATIONS')
     app.config['SQLALCHEMY_ECHO'] = EnvVarsTranslater.get_bool(
         'SQLALCHEMY_SHOW_QUERY_LOGS')
+
+    if config_name == 'testing':
+        app.config['SQLALCHEMY_DATABASE_URI'] = Db_config.get_db_con_uri()
+        app.config['TESTING'] = True
+        app.config['DEBUG'] = False
+    elif config_name == 'development':
+        app.config['DEBUG'] = True
 
     db.init_app(app)
     ma.init_app(app)

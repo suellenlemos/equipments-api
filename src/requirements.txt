@@ -18,3 +18,5 @@ Flask-Migrate
 alembic
 autopep8
 pandas
+flask-testing
+pytest
