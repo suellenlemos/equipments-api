@@ -1,13 +1,15 @@
 from contextlib import closing
-from datetime import datetime
+from datetime import datetime, timedelta
+from http import HTTPStatus
+
+
 from flask import request
 from flask_restx import Resource
 from flask_smorest import Blueprint
 from flask_sqlalchemy.query import Query as BaseQuery
-from http import HTTPStatus
 from pandas import DataFrame, isna, read_csv
 from sqlalchemy.orm import Session
-from sqlalchemy.sql import and_, or_, select
+from sqlalchemy.sql import and_, func, or_, select
 from tempfile import TemporaryDirectory
 from werkzeug.utils import secure_filename
 
@@ -26,11 +28,47 @@ def normalize_timestamp(ts):
     return ts.replace(tzinfo=None)
 
 
+def calculate_average(query: BaseQuery, time_delta: datetime):
+    now = datetime.now()
+
+    if time_delta == timedelta(hours=24):
+        start_time = now - timedelta(days=1)
+    elif time_delta == timedelta(hours=48):
+        start_time = now - timedelta(days=2)
+    elif time_delta == timedelta(weeks=1):
+        start_time = now - timedelta(weeks=1)
+    elif time_delta == timedelta(days=30):
+        start_time = now - timedelta(days=30)
+    else:
+        raise ValueError("Unsupported time_delta")
+
+    start_time = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_time = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    filtered_query = query.filter(
+        Equipment.timestamp >= start_time, Equipment.timestamp <= end_time)
+    avg_value = filtered_query.with_entities(
+        func.avg(Equipment.value)).scalar()
+    return round(avg_value, 2) if avg_value is not None else None
+
+
 @equipment_blueprint.route("/equipment")
 class RouteEquipment(Resource):
     def get(self):
         try:
+            column_name = request.args.get('column_name')
+            filter_by = request.args.getlist('filter_by')
             query = db.session.query(Equipment)
+
+            if column_name:
+                dropdown_options = query_column(column_name, query)
+                total_rows = len(dropdown_options)
+                return get_response(HTTPStatus.OK, {
+                    'dropdown_options': sorted(dropdown_options, key=lambda item: item['value']),
+                    'total': total_rows
+                })
+
+            query = add_query_filters(query, filter_by)
 
             result = get_rows_paginated(query)
 
@@ -247,3 +285,107 @@ def standardize_timestamp(timestamp: datetime) -> datetime:
             "A coluna timestamp não está preenchida corretamente (existe algum valor que está em branco, por exemplo).")
 
     return timestamp
+
+
+def query_column(column_name: str, query: BaseQuery):
+    with closing(configure_session()) as session:
+        try:
+            dropdown_options = []
+            if column_name == 'equipmentId':
+                equipments: list[Equipment] = (
+                    query.with_entities(Equipment.equipmentId)
+                    .filter(Equipment.value != None)
+                    .distinct()
+                    .order_by(Equipment.equipmentId)
+                    .all()
+                )
+
+                for equipment in equipments:
+                    equipment_id = equipment.equipmentId
+
+                    equipment_query = db.session.query(Equipment).filter(
+                        Equipment.equipmentId == equipment_id,
+                        Equipment.value != None
+                    )
+
+                    last_24 = calculate_average(
+                        equipment_query, timedelta(hours=24))
+                    last_48 = calculate_average(
+                        equipment_query, timedelta(hours=48))
+                    last_week = calculate_average(
+                        equipment_query, timedelta(weeks=1))
+                    last_month = calculate_average(
+                        equipment_query, timedelta(days=30))
+
+                    dropdown_options.append({
+                        'value': equipment_id,
+                        'label': equipment_id,
+                        'last_24': last_24,
+                        'last_48': last_48,
+                        'last_week': last_week,
+                        'last_month': last_month,
+                    })
+
+                return dropdown_options
+            else:
+                equipments = query.distinct(db.Column(column_name)).all()
+
+                for equipment in equipments:
+                    value: str | datetime = getattr(equipment, column_name)
+                    if value:
+                        dictionary = {'label': value, 'value': value}
+                        dropdown_options.append(dictionary)
+
+                return dropdown_options
+
+        except:
+            msg = 'No able to get dropdown options. Rollback executed'
+            session.rollback()
+            logger.exception(msg)
+            return get_response(HTTPStatus.INTERNAL_SERVER_ERROR, msg)
+
+
+def add_query_filters(query: BaseQuery, filter_by: list) -> BaseQuery:
+    equipment_id = request.args.get('equipmentId')
+    timestamp = request.args.get('timestamp')
+    value = request.args.get('value')
+
+    if equipment_id:
+        query = query.filter(
+            Equipment.equipmentId == equipment_id,
+            Equipment.value != None
+        )
+
+        now = datetime.now()
+
+        if 'last_24' in filter_by:
+            start_time = now - timedelta(days=1)
+            start_time = start_time.replace(
+                hour=0, minute=0, second=0, microsecond=0)
+            query = query.filter(Equipment.timestamp >= start_time)
+
+        elif 'last_48' in filter_by:
+            start_time = now - timedelta(days=2)
+            start_time = start_time.replace(
+                hour=0, minute=0, second=0, microsecond=0)
+            query = query.filter(Equipment.timestamp >= start_time)
+
+        elif 'last_week' in filter_by:
+            start_time = now - timedelta(weeks=1)
+            start_time = start_time.replace(
+                hour=0, minute=0, second=0, microsecond=0)
+            query = query.filter(Equipment.timestamp >= start_time)
+
+        elif 'last_month' in filter_by:
+            start_time = now - timedelta(days=30)
+            start_time = start_time.replace(
+                hour=0, minute=0, second=0, microsecond=0)
+            query = query.filter(Equipment.timestamp >= start_time)
+
+    if timestamp:
+        query = query.filter(Equipment.timestamp == timestamp)
+
+    if value:
+        query = query.filter(Equipment.value == value)
+
+    return query
