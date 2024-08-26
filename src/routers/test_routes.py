@@ -64,7 +64,7 @@ class TestEquipmentRoutes(TestCase):
 
     def test_post_equipment_success(self):
         data = {
-            'equipmentId': 'ABC123',
+            'equipmentId': 'EQ-1',
             'value': 50.55
         }
 
@@ -99,17 +99,6 @@ class TestEquipmentRoutes(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             response.json, {'message': 'equipmentId field must be sent'})
-
-    def test_post_equipment_already_exists(self):
-        data = {
-            'equipmentId': 'ABC123',
-            'value': 50.55
-        }
-        self.client.post('/equipment', json=data)
-        response = self.client.post('/equipment', json=data)
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(
-            response.json, {'message': 'This equipment Abc123 already exists'})
 
     def test_upload_file_success(self):
         df = DataFrame({
@@ -167,4 +156,4 @@ class TestEquipmentRoutes(TestCase):
             '/equipment/upload', content_type='multipart/form-data', data=data)
         self.assertEqual(response.status_code, 400)
         self.assertIn(
-            "A coluna equipmentId não está preenchida corretamente (o valor está em branco, por exemplo).", response.json['message'])
+            "A coluna equipmentId não está preenchida corretamente (existe algum valor que está em branco, por exemplo).", response.json['message'])

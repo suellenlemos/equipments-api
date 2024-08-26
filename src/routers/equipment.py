@@ -93,7 +93,7 @@ class RouteEquipment(Resource):
     def post(self):
         body = request.get_json() if request.get_json() else dict()
 
-        equipmentId: str = body['equipmentId']
+        equipmentId: str = body.get('equipmentId')
         value: float = body.get('value')
 
         if not (equipmentId):

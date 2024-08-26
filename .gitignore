@@ -143,3 +143,5 @@ fabric.properties
 
 # Environments
 .env
+.env.develop
+.env.production
