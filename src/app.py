@@ -12,6 +12,7 @@ from src.routers import (
     equipment_blueprint,
     login_blueprint,
     register_blueprint,
+    validate_token_blueprint
 )
 
 
@@ -60,6 +61,7 @@ def create_app(config_name: str = 'default') -> Flask:
     api.register_blueprint(equipment_blueprint)
     api.register_blueprint(login_blueprint)
     api.register_blueprint(register_blueprint)
+    api.register_blueprint(validate_token_blueprint)
 
     return app
 
