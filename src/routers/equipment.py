@@ -17,7 +17,7 @@ from src.config import db
 from src.helpers import CurrentTime, LogHelper
 from src.logs import logger
 from src.models import Equipment, EquipmentSchema
-from src.routers.helpers import configure_session, get_response
+from src.routers.helpers import configure_session, get_response, token_required
 
 equipment_blueprint = Blueprint("Equipment", __name__)
 
@@ -54,6 +54,7 @@ def calculate_average(query: BaseQuery, time_delta: datetime):
 
 @equipment_blueprint.route("/equipment")
 class RouteEquipment(Resource):
+    @token_required
     def get(self):
         try:
             column_name = request.args.get('column_name')
@@ -64,7 +65,7 @@ class RouteEquipment(Resource):
                 dropdown_options = query_column(column_name, query)
                 total_rows = len(dropdown_options)
                 return get_response(HTTPStatus.OK, {
-                    'dropdown_options': sorted(dropdown_options, key=lambda item: item['value']),
+                    'equipments': sorted(dropdown_options, key=lambda item: item['value']),
                     'total': total_rows
                 })
 
@@ -90,6 +91,7 @@ class RouteEquipment(Resource):
             logger.exception(log_msg)
             return get_response(HTTPStatus.INTERNAL_SERVER_ERROR, msg)
 
+    @token_required
     def post(self):
         body = request.get_json() if request.get_json() else dict()
 
@@ -111,19 +113,9 @@ class RouteEquipment(Resource):
         return get_response(HTTPStatus.CREATED, EquipmentSchema().dump(new_equipment))
 
 
-def get_rows_paginated(query: BaseQuery):
-    page = int(request.args.get('page')) if request.args.get('page') else 1
-    per_page = int(request.args.get('per_page')
-                   ) if request.args.get('per_page') else 100
-
-    result: Equipment = query.order_by(Equipment.equipmentId).paginate(
-        page=page, per_page=per_page).items
-
-    return result
-
-
 @equipment_blueprint.route("/equipment/upload")
 class RouteUploadEquipmentFile(Resource):
+    @token_required
     def post(self):
         with closing(configure_session()) as session:
             try:
@@ -285,6 +277,17 @@ def standardize_timestamp(timestamp: datetime) -> datetime:
             "A coluna timestamp não está preenchida corretamente (existe algum valor que está em branco, por exemplo).")
 
     return timestamp
+
+
+def get_rows_paginated(query: BaseQuery):
+    page = int(request.args.get('page')) if request.args.get('page') else 1
+    per_page = int(request.args.get('per_page')
+                   ) if request.args.get('per_page') else 100
+
+    result: Equipment = query.order_by(Equipment.equipmentId).paginate(
+        page=page, per_page=per_page).items
+
+    return result
 
 
 def query_column(column_name: str, query: BaseQuery):

@@ -8,6 +8,7 @@ from http import HTTPStatus
 from flask import request, make_response, jsonify
 from flask_restx import Resource
 from flask_smorest import Blueprint
+from pytz import timezone
 
 from src.helpers import LogHelper
 from src.logs import logger
@@ -43,10 +44,12 @@ class Login(Resource):
                 if not user or not User.verify_password(user, pwd=password):
                     return get_response(HTTPStatus.FORBIDDEN, "Email or password is incorrect")
 
+                time_zone: str = 'Etc/GMT+3'
+
                 token = jwt.encode({
                     'id': user.id,
                     'fullname': user.fullname,
-                    'exp': datetime.now() + timedelta(minutes=int(os.getenv('JWT_TOKEN_TIMEOUT_MINS')))
+                    'exp': datetime.now(timezone(time_zone)) + timedelta(minutes=int(os.getenv('JWT_TOKEN_TIMEOUT_MINS')))
                 }, os.getenv('JWT_CRYPT_KEY'),  algorithm="HS256")
 
                 logger.info(
