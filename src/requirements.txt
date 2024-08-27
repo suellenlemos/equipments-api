@@ -3,6 +3,7 @@ flask
 flask-smorest
 python-dotenv
 Flask-Cors
+PyJWT
 flask-marshmallow
 flask-restx
 marshmallow

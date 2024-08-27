@@ -8,7 +8,11 @@ from flask_smorest import Api
 from src.config import Db_config, db, ma
 import src.models
 from src.helpers import EnvVarsTranslater
-from src.routers import equipment_blueprint, register_blueprint
+from src.routers import (
+    equipment_blueprint,
+    login_blueprint,
+    register_blueprint,
+)
 
 
 basedir = os.path.dirname(os.path.realpath(__file__))
@@ -54,6 +58,7 @@ def create_app(config_name: str = 'default') -> Flask:
             db.session.commit()
 
     api.register_blueprint(equipment_blueprint)
+    api.register_blueprint(login_blueprint)
     api.register_blueprint(register_blueprint)
 
     return app
