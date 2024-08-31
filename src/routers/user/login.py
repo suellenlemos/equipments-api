@@ -35,34 +35,27 @@ class Login(Resource):
             return get_response(HTTPStatus.BAD_REQUEST, "The password field must be sent")
 
         with closing(configure_session()) as session:
-            try:
-                user: User = session.query(User) \
-                    .filter(User.email == email) \
-                    .filter(User.activated) \
-                    .first()
 
-                if not user or not User.verify_password(user, pwd=password):
-                    return get_response(HTTPStatus.FORBIDDEN, "Email or password is incorrect")
+            user: User = session.query(User) \
+                .filter(User.email == email) \
+                .filter(User.activated) \
+                .first()
 
-                time_zone: str = 'Etc/GMT+3'
+            if not user or not User.verify_password(user, pwd=password):
+                return get_response(HTTPStatus.FORBIDDEN, "Email or password is incorrect")
 
-                token = jwt.encode({
-                    'id': user.id,
-                    'fullname': user.fullname,
-                    'exp': datetime.now(timezone(time_zone)) + timedelta(minutes=int(os.getenv('JWT_TOKEN_TIMEOUT_MINS')))
-                }, os.getenv('JWT_CRYPT_KEY'),  algorithm="HS256")
+            time_zone: str = 'Etc/GMT+3'
 
-                logger.info(
-                    f"{user.fullname} logged in successfully")
+            token = jwt.encode({
+                'id': user.id,
+                'fullname': user.fullname,
+                'exp': datetime.now(timezone(time_zone)) + timedelta(minutes=int(os.getenv('JWT_TOKEN_TIMEOUT_MINS')))
+            }, os.getenv('JWT_CRYPT_KEY'),  algorithm="HS256")
 
-                return make_response(jsonify({
-                    'token': token,
-                    "user": UserSchema().dump(user)
-                }), HTTPStatus.ACCEPTED)
+            logger.info(
+                f"{user.fullname} logged in successfully")
 
-            except Exception as ex:
-                session.rollback()
-                msg = f'Unable to Login. Error: {str(ex)}'
-                log_msg = LogHelper.get_log_msg(msg, request)
-                logger.exception(log_msg)
-                return get_response(HTTPStatus.INTERNAL_SERVER_ERROR, msg)
+            return make_response(jsonify({
+                'token': token,
+                "user": UserSchema().dump(user)
+            }), HTTPStatus.ACCEPTED)

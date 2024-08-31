@@ -11,8 +11,8 @@ class EnvVarsTranslater(ABC):
 
         if env_value not in valid_values:
             raise Exception(
-                f"It was not possible convert the env variable '{
-                    env_var_name}' with the value '{env_value}' to "
+                f"It was not possible convert the env variable {
+                    env_var_name} with the value {env_value} to "
                 f"'bool'. The value needs to respect the options: {valid_values}")
 
         return env_value == "true"
