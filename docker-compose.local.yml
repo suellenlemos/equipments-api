@@ -1,0 +1,5 @@
+services:
+  equipments-backend-nginx:
+    container_name: co-equipments-backend-nginx
+    volumes:
+      - ./nginx/local/backend:/etc/nginx/conf.d:ro

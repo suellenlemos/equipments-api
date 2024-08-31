@@ -1,0 +1,60 @@
+services:
+  equipments-postgres:
+    container_name: co-equipments-postgres
+    image: postgres:13
+    env_file: .env
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_volume:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS localhost:5432/ping || exit 1"]
+      interval: 10s
+      timeout: 2s
+      retries: 20
+    networks:
+      network-equipments-backend:
+        ipv4_address: 10.0.0.2
+
+  equipments-backend:
+    container_name: co-equipments-backend
+    image: equipments-backend # Uses image name built locally
+    build: . # Generate docker image locally
+    restart: always
+    env_file: .env
+    volumes:
+      - logs_volume:/var/lib/logs
+    depends_on:
+      - equipments-postgres
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS localhost:8080/ping || exit 1"]
+    networks:
+      network-equipments-backend:
+        ipv4_address: 10.0.0.3
+
+  equipments-backend-nginx:
+    container_name: co-equipments-backend-nginx
+    image: equipments-backend-nginx # Uses image name built locally
+    build: ./nginx # Generate docker image locally
+    restart: always
+    ports:
+      - "5002:80"
+    depends_on:
+      - equipments-backend
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS localhost:80/ping || exit 1"]
+    networks:
+      network-equipments-backend:
+        ipv4_address: 10.0.0.4
+
+networks:
+  network-equipments-backend:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: "10.0.0.0/16"
+
+volumes:
+  db_volume:
+  logs_volume:
